@@ -61,6 +61,11 @@ export class ToolExecutionComponent extends Container {
 		durationMs?: number;
 	};
 	private hideComponent = false;
+	// Renderers may deduplicate pending redraws by callback identity, including during a redraw.
+	private readonly invalidateRenderer = () => {
+		this.invalidate();
+		this.ui.requestRender();
+	};
 
 	constructor(
 		toolName: string,
@@ -121,10 +126,7 @@ export class ToolExecutionComponent extends Container {
 		return {
 			args: this.args,
 			toolCallId: this.toolCallId,
-			invalidate: () => {
-				this.invalidate();
-				this.ui.requestRender();
-			},
+			invalidate: this.invalidateRenderer,
 			lastComponent,
 			state: this.rendererState,
 			cwd: this.cwd,

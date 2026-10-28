@@ -185,6 +185,40 @@ describe("openai-completions reasoning_details streaming", () => {
 		expect(payload?.reasoning).toBeUndefined();
 	});
 
+	it("merges reasoning_details from older sessions without changing stored thinking", async () => {
+		mockState.chunkSets = [
+			[chunk({ reasoning: "visible thinking" }), toolCallChunk(), chunk({}, "tool_calls")],
+			[chunk({ content: "ok" }), chunk({}, "stop")],
+		];
+		const assistantMessage = await runOpenAICompletionsStream();
+		const thinking = assistantMessage.content.find((block) => block.type === "thinking");
+		if (!thinking) throw new Error("Expected thinking block");
+		const textDeltas = Array.from({ length: 33_600 }, () => ({ type: "reasoning.text", text: "word\n" }));
+		thinking.thinkingSignature = JSON.stringify([
+			...textDeltas,
+			{ ...signedReasoningTextDetail, text: "end" },
+			reasoningDetail,
+			reasoningDetail,
+			{ ...reasoningSummaryDetail, summary: "First " },
+			{ ...reasoningSummaryDetail, summary: "second" },
+			{ type: "reasoning.text", text: "separate" },
+		]);
+		const storedMessage = JSON.stringify(assistantMessage);
+
+		await runOpenAICompletionsStream([assistantMessage]);
+
+		const replayedDetails = getAssistantPayload(mockState.payloads[1])?.reasoning_details;
+		expect(replayedDetails).toHaveLength(5);
+		expect(replayedDetails).toEqual([
+			{ ...signedReasoningTextDetail, text: `${"word\n".repeat(textDeltas.length)}end` },
+			reasoningDetail,
+			reasoningDetail,
+			{ ...reasoningSummaryDetail, summary: "First second" },
+			{ type: "reasoning.text", text: "separate" },
+		]);
+		expect(JSON.stringify(assistantMessage)).toBe(storedMessage);
+	});
+
 	it("merges consecutive text and summary reasoning_details deltas before replay", async () => {
 		const textDelta = { type: "reasoning.text", text: "The", index: 0 };
 		const textDeltaWithSignature = {

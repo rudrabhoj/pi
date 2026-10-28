@@ -221,7 +221,13 @@ function parseOpenAIReasoningDetails(signature: string | undefined): OpenAIReaso
 	if (!signature) return undefined;
 	try {
 		const parsed = JSON.parse(signature) as unknown;
-		return Array.isArray(parsed) && parsed.length > 0 && parsed.every(isOpenAIReasoningDetail) ? parsed : undefined;
+		if (!Array.isArray(parsed) || parsed.length === 0 || !parsed.every(isOpenAIReasoningDetail)) return undefined;
+		// Older sessions stored each streamed delta separately. Apply the streaming merge rules on replay too.
+		const details: OpenAIReasoningDetail[] = [];
+		for (const detail of parsed) {
+			appendOpenAIReasoningDetail(details, detail);
+		}
+		return details;
 	} catch {
 		return undefined;
 	}

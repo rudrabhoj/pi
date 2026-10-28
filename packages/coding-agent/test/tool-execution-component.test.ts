@@ -97,6 +97,44 @@ describe("ToolExecutionComponent parity", () => {
 		expect(rendered).toContain("custom result");
 	});
 
+	test("keeps renderer invalidation callbacks stable while draining pending redraws", () => {
+		const pendingRedraws = new Set<() => void>();
+		const ui = createFakeTui();
+		const requestRender = vi.spyOn(ui, "requestRender");
+		let ready = false;
+		const toolDefinition: ToolDefinition = {
+			...createBaseToolDefinition(),
+			renderCall: (_args, _theme, context) => {
+				pendingRedraws.add(context.invalidate);
+				return new Text(ready ? "ready call" : "pending call", 0, 0);
+			},
+			renderResult: (_result, _options, _theme, context) => {
+				pendingRedraws.add(context.invalidate);
+				return new Text(ready ? "ready result" : "pending result", 0, 0);
+			},
+		};
+		const components = ["tool-1", "tool-2"].map((id) => {
+			const component = new ToolExecutionComponent("custom_tool", id, {}, {}, toolDefinition, ui, process.cwd());
+			component.updateResult({ content: [], isError: false });
+			return component;
+		});
+
+		ready = true;
+		let redraws = 0;
+		for (const redraw of pendingRedraws) {
+			// A fresh callback on every render would keep extending this iteration forever.
+			expect(++redraws).toBeLessThanOrEqual(components.length);
+			redraw();
+		}
+		expect(redraws).toBe(components.length);
+		expect(requestRender).toHaveBeenCalledTimes(components.length);
+		for (const component of components) {
+			const rendered = stripAnsi(component.render(120).join("\n"));
+			expect(rendered).toContain("ready call");
+			expect(rendered).toContain("ready result");
+		}
+	});
+
 	test("self-rendered empty tool rows take no layout space", () => {
 		const toolDefinition: ToolDefinition = {
 			...createBaseToolDefinition(),
